@@ -8,6 +8,11 @@
   不读取第三方私有识别结果；目标软件不能直接接收文字时，改为在听写窗口识别后粘贴。
   浏览器会话剪贴板读回 passed，系统剪贴板独立粘贴、安装包与 RC001/RC003 真机 deferred，
   不据此勾选完成。验收见 `Testing/WindowsClipboardDictation.md`。
+  - 同日按用户要求完成本地测试安装包：Rust 全量 780 passed / 17 ignored，fmt、默认与
+    runtime-simulation 编译检查 passed，NSIS 构建、载荷校验、23/23 前端资源嵌入与归档
+    完整性 passed。构建源 `ea44a10e135d01189b598290b6dec568ed983077`，安装器 SHA-256
+    `6d0271852b560faff52f2e6a2d9c4078d3bd11bd59185bce841d8a88aa2e1415`。
+    公开源码测试包不含私有组件；未自动覆盖当前正式安装版，安装与硬件验收仍 deferred。
 
 ## 语音识别"能出字但对不上"的定位链（2026-10-27 用户报障，已定位为配置问题）
 

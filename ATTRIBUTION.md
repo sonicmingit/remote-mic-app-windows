@@ -4,6 +4,14 @@
 
 ## 豆包剪贴板听写（2026-11-05）
 
+- 本地出包环境参考 [mmozeiko/portable-msvc.py](https://gist.github.com/mmozeiko/7f3162ec2988e81e56d5c4e22cde9977/49b58850aa5e5c1e65f090d4651ee76607883e11)
+  （修订 `49b58850aa5e5c1e65f090d4651ee76607883e11`，原始脚本 SHA-256
+  `1791cccca594ff083ce8d3e0a139e6156d2c312e24332a909e608010f0230a51`），
+  仅用于开发主机从 Microsoft 官方清单下载并校验编译器/SDK；本地开发副本增加网络重试与
+  并发下载，保留下载/解压文件，不执行清理和遥测组件删除。脚本、编译器、SDK 均不进入
+  产品源码或安装包。Rust 使用 [官方 rustup](https://rust-lang.org/tools/install/)，
+  安装器与官方 `.sha256` 核对；MSVC/SDK 包逐项与 Microsoft 清单 SHA-256 核对。
+
 - 行为参考：[`jacksonlin-infra/remote-voiceime`](https://github.com/jacksonlin-infra/remote-voiceime/tree/c7d29269b2030ef352e71e41d5d3edef8f002a83)
   提交 `c7d29269b2030ef352e71e41d5d3edef8f002a83` 的 README：在本机接收豆包听写，
   再借助剪贴板送到不便直接输入的环境。仅参考“本机接收后整段交付”的行为，没有复制代码、

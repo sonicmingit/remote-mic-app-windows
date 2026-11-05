@@ -67,6 +67,19 @@ powershell -File scripts/build-local-test-package.ps1
 - `passed`：Edge 中生产构建页面的多行与表情复制，页面显示成功且浏览器会话剪贴板逐字读回一致。
 - `deferred`：Windows 系统剪贴板独立粘贴。PowerShell 跨通道读取为空，
   不能把浏览器会话的读回扩大为系统剪贴板通过；随后原生 UI 自动化因无法可靠核对浏览器 URL 被工具停止。
-- `deferred`：Tauri capability 编译验证、NSIS 构建与安装/升级/启动、真实豆包输入法与
-  RC001 / RC003 分别的冷态首用、连续语音、断连和睡眠恢复。当前环境无 Rust/MSVC 构建链；
-  未修改或重装正在运行的 SayAll 1.8.3。
+- 后续本地出包（同日，用户明确要求生成安装包）：已补齐独立 Rust 1.99.1、MSVC
+  14.44.35207 与 Windows SDK 10.0.26100.0，工具目录不进入安装包。
+- `passed`：`cargo fmt --all -- --check`、`cargo test --workspace --locked`
+  （780 passed / 17 ignored）、`cargo check --workspace --locked`、
+  `cargo check -p sayall-windows-app --features runtime-simulation --locked`。
+  首轮测试中预设应用候选路径用例失败，已复现为本机 `TEMP` / `TMP` 不一致；
+  在测试进程中统一两者后全量通过，没有修改产品代码或用户的永久环境变量。
+- `passed`：`scripts/build-local-test-package.ps1`、`scripts/verify-windows-bundle.ps1`、
+  23/23 前端资源嵌入（含 `clipboard-dictation.html`）、源修订号内嵌读回、NSIS 归档完整性。
+  安装器版本 1.8.3，x64，来源提交 `ea44a10e135d01189b598290b6dec568ed983077`，
+  SHA-256 `6d0271852b560faff52f2e6a2d9c4078d3bd11bd59185bce841d8a88aa2e1415`。
+- 包是公开源码构建，不含会员、常用语和键位方案私有组件；Windows Authenticode 未签名，
+  updater `.sig` 使用本机测试密钥，不可当作官方更新资产发布。
+- `deferred`：安装/升级/启动、真实豆包输入法与 RC001 / RC003 分别的冷态首用、
+  连续语音、断连和睡眠恢复。当前主机正在使用正式安装版，未自动覆盖或卸载，
+  CI 生命周期脚本所需的“无已有安装”条件不成立。安装后应按验收手册独立确认系统粘贴结果。
