@@ -1,8 +1,8 @@
 // English strings for connection. Key = exact Chinese source passed to t().
 export default {
-  "自动浮窗接字（测试）": "Automatic Dictation Window (Test)",
-  "按住语音键自动弹出接字浮窗。本轮仅验证接字，暂不自动粘贴；重启后关闭。":
-    "The receiving window opens when you hold the voice button. This test checks text capture only; automatic paste is not enabled. The test resets when SayAll restarts.",
+  "浮窗听写后自动粘贴（测试）": "Dictate in a Floating Window, Then Paste (Test)",
+  "按住语音键在浮窗接字，松开并识别完成后自动复制、返回原输入框粘贴；重启后关闭。":
+    "Hold the voice button to dictate in the floating window. Release it to finish recognition, copy the text and paste into the original field. This test resets when SayAll restarts.",
   "接字浮窗未能准备好，请重试。": "Could not prepare the receiving window. Try again.",
   "剪贴板听写": "Clipboard Dictation",
   "打开剪贴板听写": "Open Clipboard Dictation",

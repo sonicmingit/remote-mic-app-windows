@@ -20,7 +20,8 @@ describe("自动浮窗接字验证开关", () => {
     await flushPromises();
     expect(invoke).toHaveBeenCalledWith("set_clipboard_probe_enabled", { enabled: true, english: false });
     expect((wrapper.get("input").element as HTMLInputElement).checked).toBe(true);
-    expect(wrapper.text()).toContain("暂不自动粘贴");
+    expect(wrapper.text()).toContain("松开并识别完成后自动复制、返回原输入框粘贴");
+    expect(wrapper.text()).toContain("重启后关闭");
     wrapper.unmount();
   });
   it("reverts the toggle when native initialization fails without exposing internal errors", async () => {

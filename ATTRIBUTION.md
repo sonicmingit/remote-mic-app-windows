@@ -12,6 +12,16 @@
   用户选择继续豆包输入法，先做原生接字验证；其 API 不激活字幕浮窗不能直接等同于
   IME 接字窗口。实验现状与未通过边界见 `docs/investigations/2026-11-05-doubao-floating-receiver-probe.md`。
 
+- 用户确认原生浮窗接字后，补充最终投送；仍仅参考 VoiceStick 的行为与失败边界，没有复制实现。
+  原生组合提交依据 Microsoft [WM_IME_COMPOSITION](https://learn.microsoft.com/en-us/windows/win32/intl/wm-ime-composition)，
+  焦点快照与读回依据 [GetGUIThreadInfo](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-getguithreadinfo)，
+  Unicode 剪贴板所有权依据 [Using the Clipboard](https://learn.microsoft.com/en-us/windows/win32/dataxchg/using-the-clipboard)，
+  关闭后的序号基线依据 [CloseClipboard](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-closeclipboard)
+  与 [GetClipboardSequenceNumber](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-getclipboardsequencenumber)。
+  本机日志中 6 次非空接字均有 IME_END，首个非空结果在松键后约 659–817 ms 到达；
+  这是本轮选择“释放 + 组合提交 + 非空结果”门禁的实验依据，不代表豆包提供 ASR 最终结果 API。
+  不采用固定等待判定完成，不读取第三方正文；隐藏原生 EDIT 的 Unicode 剪贴板/粘贴用例独立验证。
+
 - 本地出包环境参考 [mmozeiko/portable-msvc.py](https://gist.github.com/mmozeiko/7f3162ec2988e81e56d5c4e22cde9977/49b58850aa5e5c1e65f090d4651ee76607883e11)
   （修订 `49b58850aa5e5c1e65f090d4651ee76607883e11`，原始脚本 SHA-256
   `1791cccca594ff083ce8d3e0a139e6156d2c312e24332a909e608010f0230a51`），
@@ -23,8 +33,8 @@
 - 行为参考：[`jacksonlin-infra/remote-voiceime`](https://github.com/jacksonlin-infra/remote-voiceime/tree/c7d29269b2030ef352e71e41d5d3edef8f002a83)
   提交 `c7d29269b2030ef352e71e41d5d3edef8f002a83` 的 README：在本机接收豆包听写，
   再借助剪贴板送到不便直接输入的环境。仅参考“本机接收后整段交付”的行为，没有复制代码、
-  引入依赖或采用其远程投送/焦点恢复实现。本补丁让用户主动打开接收窗口并手动粘贴，
-  不自动聚焦第三方应用、不自动投送、不改既有语音键时序。
+  引入依赖或采用其远程投送/焦点恢复实现。初版为手动听写入口；后续按用户要求增加默认关闭的
+  自动接字/投送开关，使用公开 Win32 焦点与 Ctrl+V，不改既有语音键和音频结束时序。
 - Web 输入生命周期依据 MDN [compositionend](https://developer.mozilla.org/en-US/docs/Web/API/Element/compositionend_event)
   与 [Clipboard.writeText](https://developer.mozilla.org/en-US/docs/Web/API/Clipboard/writeText)：
   跳过 composing 中间态，确认后复制自有输入框全文，失败保留原文、按序写入并允许重试。

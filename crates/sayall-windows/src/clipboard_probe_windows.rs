@@ -1,7 +1,10 @@
 //! Native EDIT receiver for an explicitly enabled experiment. BLE only posts
 //! commands; it never waits for window creation, focus, IME, or recognition.
-//! This version intentionally never sends Ctrl+V: first establish IME ground truth.
-use super::ProbeSession;
+//! Released sessions deliver once after the native IME commit event.
+use super::{deliver_with, DeliveryFailure, DeliveryHost, DeliveryOutcome, ProbeSession};
+#[path = "clipboard_delivery_windows.rs"]
+mod delivery;
+use delivery::{ClipboardStamp, Target};
 use std::{
     sync::{
         atomic::{AtomicBool, AtomicU64, Ordering},
@@ -33,7 +36,16 @@ const COMMAND: u32 = WM_APP + 73;
 const INPUT_CHANGED: u32 = WM_APP + 74;
 const IME_START: u32 = WM_APP + 75;
 const IME_END: u32 = WM_APP + 76;
+const FINALIZE: u32 = WM_APP + 77;
+const CHECK_FOCUS: u32 = WM_APP + 78;
+const COPY_ALL: u32 = WM_APP + 79;
 const EDIT_ID: usize = 101;
+const COPY_ID: usize = 102;
+const DELIVERY_TIMER: usize = 103;
+const DETACH_TIMER: usize = 104;
+// Retries only clipboard locks / held modifiers. Never guesses ASR completion.
+const RETRY_MS: u32 = 25;
+const OUTPUT_TIMEOUT: Duration = Duration::from_secs(30);
 static ENABLED: AtomicBool = AtomicBool::new(false);
 static NEXT: AtomicU64 = AtomicU64::new(0);
 static ACTIVE: AtomicU64 = AtomicU64::new(0);
@@ -42,11 +54,11 @@ static RUNTIME: OnceLock<Mutex<Option<Runtime>>> = OnceLock::new();
 enum Command {
     Begin {
         generation: u64,
-        origin: isize,
+        origin: Option<Target>,
         requested: Instant,
     },
     Release(u64),
-    Cancel(&'static str),
+    Cancel(u64, &'static str),
     Quit,
 }
 struct Runtime {
@@ -61,11 +73,14 @@ struct Context {
     status: HWND,
     english: bool,
     state: ProbeSession,
-    origin: isize,
+    origin: Option<Target>,
     started: Instant,
     font: HFONT,
     scale: i32,
     attached_threads: Option<(u32, u32)>,
+    pending: Option<String>,
+    deadline: Option<Instant>,
+    waiting_logged: bool,
 }
 fn log(action: &str, generation: u64, fields: &str) {
     crate::gatt_note(format!(
@@ -146,7 +161,7 @@ pub fn begin() {
     }
     let generation = NEXT.fetch_add(1, Ordering::AcqRel) + 1;
     ACTIVE.store(generation, Ordering::Release);
-    let origin = unsafe { GetForegroundWindow() }.0 as isize;
+    let origin = unsafe { Target::capture() };
     post(Command::Begin {
         generation,
         origin,
@@ -160,8 +175,9 @@ pub fn release() {
     }
 }
 pub fn cancel(reason: &'static str) {
-    if ACTIVE.swap(0, Ordering::AcqRel) != 0 {
-        post(Command::Cancel(reason));
+    let generation = ACTIVE.swap(0, Ordering::AcqRel);
+    if generation != 0 {
+        post(Command::Cancel(generation, reason));
     }
 }
 pub fn shutdown() {
@@ -202,6 +218,171 @@ unsafe fn label(hwnd: HWND, value: &str) {
 }
 
 impl Context {
+    unsafe fn stop_output(&mut self) {
+        let _ = KillTimer(Some(self.hwnd), DELIVERY_TIMER);
+        self.pending = None;
+        self.deadline = None;
+        self.waiting_logged = false;
+    }
+    unsafe fn schedule_output(&self) {
+        if self.state.released && !self.state.delivered {
+            let _ = PostMessageW(
+                Some(self.hwnd),
+                FINALIZE,
+                WPARAM(self.state.generation as usize),
+                LPARAM(self.state.revision as isize),
+            );
+        }
+    }
+    unsafe fn text(&self) -> Option<String> {
+        let len = GetWindowTextLengthW(self.edit).max(0) as usize;
+        if len > 200_000 {
+            return None;
+        }
+        let mut buffer = vec![0u16; len + 1];
+        let read = GetWindowTextW(self.edit, &mut buffer).max(0) as usize;
+        String::from_utf16(&buffer[..read]).ok()
+    }
+    unsafe fn finish(&mut self, generation: u64, revision: u64) {
+        if generation == 0
+            || generation != self.state.generation
+            || ACTIVE.load(Ordering::Acquire) != generation
+        {
+            return;
+        }
+        if self
+            .deadline
+            .is_some_and(|deadline| Instant::now() >= deadline)
+        {
+            self.state.delivered = true; // terminal: late IME events must not paste
+            self.stop_output();
+            label(
+                self.status,
+                if self.english {
+                    "Timed out waiting for text or clipboard. Text is kept; use Copy All."
+                } else {
+                    "等待文字或剪贴板超时，已保留文字，请点“复制全部”。"
+                },
+            );
+            log(
+                "delivery",
+                generation,
+                "phase=completed result=failed reason=timeout",
+            );
+            return;
+        }
+        if self.pending.is_none() {
+            if !self.state.released
+                || !self.state.ime_finished
+                || self.state.composing
+                || self.state.chars == 0
+                || self.state.delivered
+                || revision != self.state.revision
+            {
+                return;
+            }
+            if delivery::modifiers_held() {
+                if !self.waiting_logged {
+                    log(
+                        "delivery",
+                        generation,
+                        "phase=pending reason=modifiers_held",
+                    );
+                    self.waiting_logged = true;
+                }
+                return;
+            }
+            if !self.state.claim_delivery(generation, revision) {
+                return;
+            }
+            self.pending = self.text();
+            if self.pending.is_none() {
+                self.stop_output();
+                log(
+                    "delivery",
+                    generation,
+                    "phase=completed result=failed reason=text_unavailable",
+                );
+                label(
+                    self.status,
+                    if self.english {
+                        "Could not read all text. Text is kept."
+                    } else {
+                        "未能读取完整文字，已保留浮窗。"
+                    },
+                );
+                return;
+            }
+        }
+        let text = self.pending.take().unwrap();
+        if self.text().as_deref() != Some(text.as_str()) {
+            self.stop_output();
+            label(
+                self.status,
+                if self.english {
+                    "Text changed while copying. Use Copy All."
+                } else {
+                    "复制期间文字有变化，已保留最新文字，请点“复制全部”。"
+                },
+            );
+            log(
+                "delivery",
+                generation,
+                "phase=completed result=failed reason=source_changed",
+            );
+            return;
+        }
+        let mut host = NativeDelivery {
+            context: self,
+            generation,
+            stamp: None,
+            text: &text,
+        };
+        let outcome = deliver_with(&mut host, &text);
+        match outcome {
+            DeliveryOutcome::ClipboardBusy => {
+                self.pending = Some(text);
+                if !self.waiting_logged {
+                    log(
+                        "delivery",
+                        generation,
+                        "phase=pending reason=clipboard_busy",
+                    );
+                    self.waiting_logged = true;
+                }
+            }
+            DeliveryOutcome::Submitted => {
+                self.stop_output();
+                log(
+                    "delivery",
+                    generation,
+                    &format!(
+                        "phase=completed result=submitted chars={} elapsed_ms={}",
+                        self.state.chars,
+                        self.started.elapsed().as_millis()
+                    ),
+                );
+                // Keep ACTIVE until the next press/cancel; duplicate IME events are
+                // terminal for this generation, and the clipboard remains owned.
+            }
+            DeliveryOutcome::Kept(reason) => {
+                self.stop_output();
+                label(
+                    self.status,
+                    if self.english {
+                        "Automatic paste stopped. Text is kept; use Copy All or paste from the clipboard."
+                    } else {
+                        "自动粘贴未完成，已保留文字；可点“复制全部”后手动粘贴。"
+                    },
+                );
+                log(
+                    "delivery",
+                    generation,
+                    &format!("phase=completed result=failed reason={}", reason.token()),
+                );
+            }
+        }
+    }
     unsafe fn detach_input(&mut self) -> bool {
         let Some((foreground, current)) = self.attached_threads else {
             return true;
@@ -217,6 +398,10 @@ impl Context {
         );
         if detached {
             self.attached_threads = None;
+            let _ = KillTimer(Some(self.hwnd), DETACH_TIMER);
+        } else {
+            // Resource release is retried independently of the output session.
+            SetTimer(Some(self.hwnd), DETACH_TIMER, 100, None);
         }
         detached
     }
@@ -301,11 +486,13 @@ impl Context {
                             "phase=completed reason=replaced",
                         );
                     }
-                    self.origin = if origin == self.hwnd.0 as isize {
-                        self.origin
-                    } else {
-                        origin
-                    };
+                    self.stop_output();
+                    self.origin =
+                        if origin.is_some_and(|target| target.root == self.hwnd.0 as isize) {
+                            self.origin
+                        } else {
+                            origin
+                        };
                     self.started = requested;
                     self.state.cancel();
                     if self.create_editor(generation).is_err() {
@@ -333,8 +520,9 @@ impl Context {
                     let focused = self.focus_editor();
                     let foreground_matches = GetForegroundWindow() == self.hwnd;
                     let editor_matches = GetFocus() == self.edit;
-                    log("focus", generation, &format!("phase=completed result={} foreground_matches={foreground_matches} editor_matches={editor_matches} key_already_down={key_down} elapsed_ms={} origin_present={}", if focused { "passed" } else { "failed" }, requested.elapsed().as_millis(), self.origin != 0));
+                    log("focus", generation, &format!("phase=completed result={} foreground_matches={foreground_matches} editor_matches={editor_matches} key_already_down={key_down} elapsed_ms={} origin_present={}", if focused { "passed" } else { "failed" }, requested.elapsed().as_millis(), self.origin.is_some()));
                     if !focused {
+                        self.state.stop_auto_paste();
                         label(
                             self.status,
                             if self.english {
@@ -358,18 +546,43 @@ impl Context {
                             ),
                         );
                         self.refresh();
+                        self.deadline = Some(Instant::now() + OUTPUT_TIMEOUT);
+                        if SetTimer(Some(self.hwnd), DELIVERY_TIMER, RETRY_MS, None) == 0 {
+                            self.state.delivered = true;
+                            self.stop_output();
+                            log(
+                                "delivery",
+                                generation,
+                                "phase=completed result=failed reason=timer_unavailable",
+                            );
+                            label(
+                                self.status,
+                                if self.english {
+                                    "Could not start delivery. Use Copy All."
+                                } else {
+                                    "未能开始投送，请点“复制全部”。"
+                                },
+                            );
+                        } else {
+                            self.schedule_output();
+                        }
                     }
                 }
-                Command::Cancel(reason) => {
+                Command::Cancel(generation, reason) => {
+                    if self.state.generation != generation {
+                        continue;
+                    }
                     log(
                         "cancel",
                         self.state.generation,
                         &format!("phase=completed reason={reason} chars={}", self.state.chars),
                     );
+                    self.stop_output();
                     self.state.cancel();
                     let _ = ShowWindow(self.hwnd, SW_HIDE);
                 }
                 Command::Quit => {
+                    self.stop_output();
                     self.state.cancel();
                     let _ = DestroyWindow(self.hwnd);
                 }
@@ -382,7 +595,7 @@ impl Context {
         }
         let value = if self.english {
             format!(
-                "{} characters · {}. Capture experiment only; automatic paste is not enabled.",
+                "{} characters · {}. Committed text will be copied and pasted into the original field.",
                 self.state.chars,
                 if self.state.released {
                     "button released; waiting for / inspecting IME text"
@@ -392,7 +605,7 @@ impl Context {
             )
         } else {
             format!(
-                "已接收 {} 字 · {}。本轮仅验证接字，暂不自动粘贴。",
+                "已接收 {} 字 · {}。文字提交后自动复制，返回原输入框粘贴。",
                 self.state.chars,
                 if self.state.released {
                     "已松开，等待并检查豆包结果"
@@ -405,7 +618,7 @@ impl Context {
     }
     unsafe fn changed(&mut self, composing: Option<bool>) {
         let generation = self.state.generation;
-        if generation == 0 || ACTIVE.load(Ordering::Acquire) != generation {
+        if generation == 0 || ACTIVE.load(Ordering::Acquire) != generation || self.state.delivered {
             return;
         }
         let len = GetWindowTextLengthW(self.edit).max(0) as usize;
@@ -432,6 +645,164 @@ impl Context {
             ),
         );
         self.refresh();
+        self.schedule_output();
+    }
+}
+
+struct NativeDelivery<'a> {
+    context: &'a mut Context,
+    generation: u64,
+    stamp: Option<ClipboardStamp>,
+    text: &'a str,
+}
+impl NativeDelivery<'_> {
+    fn active(&self) -> bool {
+        enabled() && ACTIVE.load(Ordering::Acquire) == self.generation
+    }
+}
+impl DeliveryHost for NativeDelivery<'_> {
+    fn copy_verified(&mut self, text: &str) -> Result<Option<()>, DeliveryFailure> {
+        if !self.active() {
+            return Err(DeliveryFailure::Interrupted);
+        }
+        self.stamp = unsafe { delivery::copy(self.context.hwnd, text) }.map_err(|reason| {
+            log(
+                "copy",
+                self.generation,
+                &format!("phase=completed result=failed reason={reason}"),
+            );
+            DeliveryFailure::CopyFailed
+        })?;
+        if self.stamp.is_some() {
+            log(
+                "copy",
+                self.generation,
+                &format!(
+                    "phase=completed result=passed chars={}",
+                    text.chars().count()
+                ),
+            );
+        }
+        Ok(self.stamp.map(|_| ()))
+    }
+    fn allow_restore(&mut self) -> Result<(), DeliveryFailure> {
+        unsafe {
+            if !self.active()
+                || !self.context.state.auto_paste
+                || GetForegroundWindow() != self.context.hwnd
+            {
+                return Err(DeliveryFailure::Interrupted);
+            }
+            if delivery::modifiers_held() {
+                return Err(DeliveryFailure::ModifiersHeld);
+            }
+            if !self.context.origin.is_some_and(|target| target.valid()) {
+                return Err(DeliveryFailure::TargetChanged);
+            }
+        }
+        Ok(())
+    }
+    fn hide_receiver(&mut self) -> bool {
+        unsafe {
+            let _ = ShowWindow(self.context.hwnd, SW_HIDE);
+            let hidden = !IsWindowVisible(self.context.hwnd).as_bool();
+            log(
+                "hide",
+                self.generation,
+                if hidden {
+                    "phase=completed result=passed visible=false"
+                } else {
+                    "phase=completed result=failed visible=true"
+                },
+            );
+            hidden
+        }
+    }
+    fn restore_target(&mut self) -> bool {
+        unsafe {
+            let Some(target) = self.context.origin else {
+                return false;
+            };
+            let foreground = GetForegroundWindow();
+            if !self.active()
+                || !target.valid()
+                || (foreground != target.root_hwnd()
+                    && foreground != self.context.hwnd
+                    && !foreground.0.is_null())
+                || !self.context.detach_input()
+            {
+                return false;
+            }
+            let current = GetCurrentThreadId();
+            if target.focus_tid != current {
+                if !AttachThreadInput(target.focus_tid, current, true).as_bool() {
+                    log(
+                        "restore",
+                        self.generation,
+                        "phase=completed result=failed reason=attach_failed",
+                    );
+                    return false;
+                }
+                self.context.attached_threads = Some((target.focus_tid, current));
+            }
+            let _ = SetForegroundWindow(target.root_hwnd());
+            let _ = SetFocus(Some(target.focus_hwnd()));
+            let detached = self.context.detach_input();
+            let focused = detached && target.focused();
+            log(
+                "restore",
+                self.generation,
+                if focused {
+                    "phase=completed result=passed focus_matches=true"
+                } else {
+                    "phase=completed result=failed focus_matches=false"
+                },
+            );
+            focused
+        }
+    }
+    fn verify_before_paste(&mut self) -> Result<(), DeliveryFailure> {
+        unsafe {
+            if !self.active() {
+                return Err(DeliveryFailure::Interrupted);
+            }
+            if self.context.text().as_deref() != Some(self.text) {
+                return Err(DeliveryFailure::SourceChanged);
+            }
+            if !self.context.origin.is_some_and(|target| target.focused()) {
+                return Err(DeliveryFailure::TargetChanged);
+            }
+            if !self.stamp.is_some_and(|stamp| stamp.unchanged()) {
+                return Err(DeliveryFailure::ClipboardChanged);
+            }
+            if delivery::modifiers_held() {
+                return Err(DeliveryFailure::ModifiersHeld);
+            }
+        }
+        Ok(())
+    }
+    fn paste_once(&mut self) -> bool {
+        use crate::send_input::{KeyChord, KeyCode};
+        let accepted = crate::send_input_windows::SendInputRuntime::new()
+            .tap(KeyChord {
+                keys: vec![KeyCode::LeftControl, KeyCode::V],
+            })
+            .is_ok();
+        log(
+            "paste",
+            self.generation,
+            if accepted {
+                "phase=submitted result=accepted target_insertion=unverified"
+            } else {
+                "phase=completed result=failed reason=send_input_rejected retryable=false"
+            },
+        );
+        accepted
+    }
+    fn retain_receiver(&mut self) {
+        unsafe {
+            let _ = ShowWindow(self.context.hwnd, SW_SHOWNOACTIVATE);
+        }
     }
 }
 
@@ -476,11 +847,74 @@ unsafe extern "system" fn window_proc(hwnd: HWND, message: u32, wp: WPARAM, lp: 
         );
         return LRESULT(0);
     }
+    // All native notifications that can occur inside focus/show APIs are posted.
+    if message == WM_ACTIVATE && (wp.0 & 0xffff) == WA_INACTIVE as usize {
+        let _ = PostMessageW(Some(hwnd), CHECK_FOCUS, WPARAM(0), LPARAM(0));
+    }
+    if message == WM_COMMAND && (wp.0 & 0xffff) == COPY_ID {
+        let _ = PostMessageW(Some(hwnd), COPY_ALL, WPARAM(0), LPARAM(0));
+        return LRESULT(0);
+    }
     let pointer = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut Context;
     if !pointer.is_null() {
         match message {
             COMMAND => {
                 (*pointer).receive();
+                return LRESULT(0);
+            }
+            FINALIZE => {
+                (*pointer).finish(wp.0 as u64, lp.0 as u64);
+                return LRESULT(0);
+            }
+            WM_TIMER if wp.0 == DELIVERY_TIMER => {
+                (*pointer).finish((*pointer).state.generation, (*pointer).state.revision);
+                return LRESULT(0);
+            }
+            WM_TIMER if wp.0 == DETACH_TIMER => {
+                (*pointer).detach_input();
+                return LRESULT(0);
+            }
+            CHECK_FOCUS => {
+                if IsWindowVisible(hwnd).as_bool()
+                    && GetForegroundWindow() != hwnd
+                    && (*pointer).state.auto_paste
+                {
+                    (*pointer).state.stop_auto_paste();
+                    log(
+                        "focus_change",
+                        (*pointer).state.generation,
+                        "phase=observed auto_paste=false reason=user_switched_window",
+                    );
+                }
+                return LRESULT(0);
+            }
+            COPY_ALL => {
+                if let Some(text) = (*pointer).text() {
+                    let copied = delivery::copy(hwnd, &text).is_ok_and(|stamp| stamp.is_some());
+                    log(
+                        "manual_copy",
+                        (*pointer).state.generation,
+                        if copied {
+                            "phase=completed result=passed"
+                        } else {
+                            "phase=completed result=failed"
+                        },
+                    );
+                    label(
+                        (*pointer).status,
+                        if copied {
+                            if (*pointer).english {
+                                "Copied. Paste into your app."
+                            } else {
+                                "已复制，可到目标输入框粘贴。"
+                            }
+                        } else if (*pointer).english {
+                            "Clipboard is unavailable. Try Copy All again."
+                        } else {
+                            "剪贴板暂不可用，请再次点“复制全部”。"
+                        },
+                    );
+                }
                 return LRESULT(0);
             }
             INPUT_CHANGED => {
@@ -502,11 +936,15 @@ unsafe extern "system" fn window_proc(hwnd: HWND, message: u32, wp: WPARAM, lp: 
                     (*pointer).state.generation,
                     "phase=observed",
                 );
+                if message == IME_END {
+                    (*pointer).state.ime_end(wp.0 as u64);
+                }
                 (*pointer).changed(Some(message == IME_START));
                 return LRESULT(0);
             }
             WM_CLOSE => {
                 ACTIVE.store(0, Ordering::Release);
+                (*pointer).stop_output();
                 (*pointer).state.cancel();
                 let _ = ShowWindow(hwnd, SW_HIDE);
                 return LRESULT(0);
@@ -544,11 +982,14 @@ unsafe fn run(
         status: HWND::default(),
         english,
         state: ProbeSession::default(),
-        origin: 0,
+        origin: None,
         started: Instant::now(),
         font,
         scale: dpi,
         attached_threads: None,
+        pending: None,
+        deadline: None,
+        waiting_logged: false,
     });
     let result = (|| -> windows::core::Result<HWND> {
         let instance = GetModuleHandleW(None)?;
@@ -561,9 +1002,9 @@ unsafe fn run(
         };
         RegisterClassW(&class);
         let title = wide(if english {
-            "Doubao Capture Check"
+            "Doubao Dictation"
         } else {
-            "豆包浮窗接字验证"
+            "豆包浮窗听写"
         });
         let scale = |n: i32| n * dpi / 96;
         let hwnd = CreateWindowExW(
@@ -590,7 +1031,7 @@ unsafe fn run(
             scale(12),
             scale(122),
             scale(480),
-            scale(100),
+            scale(64),
             Some(hwnd),
             None,
             Some(instance.into()),
@@ -598,6 +1039,27 @@ unsafe fn run(
         )?;
         SendMessageW(
             context.status,
+            WM_SETFONT,
+            Some(WPARAM(font.0 as usize)),
+            Some(LPARAM(1)),
+        );
+        let copy_title = wide(if english { "Copy All" } else { "复制全部" });
+        let button = CreateWindowExW(
+            WINDOW_EX_STYLE(0),
+            w!("BUTTON"),
+            PCWSTR(copy_title.as_ptr()),
+            WS_CHILD | WS_VISIBLE | WS_TABSTOP,
+            scale(12),
+            scale(188),
+            scale(120),
+            scale(30),
+            Some(hwnd),
+            Some(HMENU(COPY_ID as *mut _)),
+            Some(instance.into()),
+            None,
+        )?;
+        SendMessageW(
+            button,
             WM_SETFONT,
             Some(WPARAM(font.0 as usize)),
             Some(LPARAM(1)),

@@ -42,13 +42,13 @@ onUnmounted(() => { disposed = true; if (timer) clearInterval(timer); });
 <template>
   <div class="clipboard-probe-switch">
     <label class="toggle-row">
-      <span>{{ t("自动浮窗接字（测试）") }}</span>
+      <span>{{ t("浮窗听写后自动粘贴（测试）") }}</span>
       <span class="toggle-switch-slot">
         <input type="checkbox" class="toggle-input" :checked="checked" :disabled="!supported || loading || busy" @change="change" />
         <span v-if="busy || loading" class="toggle-spinner" aria-hidden="true"></span>
       </span>
     </label>
-    <p class="tiny muted">{{ t("按住语音键自动弹出接字浮窗。本轮仅验证接字，暂不自动粘贴；重启后关闭。") }}</p>
+    <p class="tiny muted">{{ t("按住语音键在浮窗接字，松开并识别完成后自动复制、返回原输入框粘贴；重启后关闭。") }}</p>
     <p v-if="error" role="alert">{{ t("接字浮窗未能准备好，请重试。") }}</p>
   </div>
 </template>
