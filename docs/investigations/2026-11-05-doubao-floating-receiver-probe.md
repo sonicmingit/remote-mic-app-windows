@@ -8,7 +8,7 @@
 
 对照 VoiceStick 后，用户明确选择继续用豆包输入法，先验证自动浮窗接字，不切换 API。
 所以本轮代码只增加默认关闭、不持久化的“自动浮窗接字（测试）”，**没有自动粘贴**。
-这不是上述完整功能，也没有生成替代上次安装包的新安装器。
+这不是上述完整功能。最初检查点未出新安装器，后续测试包记录见下方。
 
 ## 参考结论
 
@@ -48,8 +48,20 @@
 - 已加入仓库既有的公开 `AttachThreadInput` 成对附加/分离尝试，**不注入 Alt 解锁**；
   分离失败保留状态，后续周期和退出重试。修改后的例程编译 passed，但自动聚焦行为未复验。
 - 原生复验被用户物理 Esc 停止，此后不再执行界面操作。
-- `deferred`：最新代码的 Rust 全量测试、默认/runtime-simulation 编译检查、完整安装器，
-  以及真实豆包、RC001/RC003、冷态首用、首尾完整性、连续会话、断连/睡眠恢复。
+- 后续按用户要求生成接字验证包，**没有恢复界面自动化，也没有自动安装或覆盖正式版**。
+- `passed`：源 `1f017b9e237e70cc62d5c82128c276bcfdf66b02` 的
+  `cargo fmt --all -- --check`、`cargo test --workspace --locked`（784 passed / 17 ignored，
+  仅测试进程中令 TMP=TEMP）、`cargo check --workspace --locked`、
+  `cargo check -p sayall-windows-app --features runtime-simulation --locked`。
+  前端复用上一轮未变更代码的 586 passed / 10 skipped 与 `pnpm build` 结果。
+- `passed`：`scripts/build-local-test-package.ps1`、`scripts/verify-windows-bundle.ps1`、
+  23/23 前端资源嵌入、构建修订号和实验 IPC 标记读回、7z 归档完整性。
+  Windows x64 / 1.8.3 安装器 SHA-256：
+  `367fe03736cc9f7f591a7e04e4867a56f639d5c7d1906316a882848c8284d2c9`。
+- 包为未签名的公开源码本地测试版，不含会员、常用语和键位方案的私有组件；updater
+  签名仅使用本机测试密钥，不是官方发布资产。实际安装会替换同身份版本，不提供并装隔离。
+- `deferred`：安装/升级/启动、自动聚焦与真实豆包、RC001/RC003、冷态首用、首尾完整性、
+  连续会话、断连/睡眠恢复。自动复制和 Ctrl+V 投送尚未实现，不能将接字测试包作为完整功能交付。
 
 ## 恢复工作时先做
 
