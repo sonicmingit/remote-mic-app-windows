@@ -1988,6 +1988,7 @@ fn invalidate_connection(
     connection_generation: &mut u64,
     usage: &UsageCounters,
 ) -> Result<(), PlatformError> {
+    crate::clipboard_probe::cancel("connection_invalidated");
     *connection_generation = connection_generation.wrapping_add(1);
     release_voice_hold_hotkey(send_input, held_hotkey);
     usage.finish_voice_session();
@@ -2491,6 +2492,9 @@ fn handle_control(
             // RC003 的报告层语音路径实测直接发 0x04 STREAM_START，不经过
             // MIC_OPEN；这里兜底开始统计。若 MIC_OPEN 已先记过，方法幂等。
             usage.ensure_voice_session_started(crate::foreground::foreground_application_name());
+            if *lock(voice_input_tool) == Some(VoiceInputTool::Doubao) {
+                crate::clipboard_probe::begin();
+            }
             // 回眸：直接 0x04 的路径没有 MIC_OPEN 提前量，这里补一次基线；
             // 已有 pending 时不重复 begin（否则会把刚取到的基线丢掉）。
             if !*transcript_pending_started {
@@ -2750,6 +2754,7 @@ fn handle_control(
             snapshot.last_error = None;
         }
         PipelineOutput::StreamStopped { generation, .. } => {
+            crate::clipboard_probe::release();
             *last_voice_audio_at = None;
             // 回眸：先记结束时刻，文字稳定等待与音频排空互不影响。
             let transcript_ended_at = voice_timestamp_ms();
@@ -2995,6 +3000,7 @@ fn abort_voice_session(
     error: String,
     usage: &UsageCounters,
 ) {
+    crate::clipboard_probe::cancel("voice_aborted");
     release_voice_hold_hotkey(send_input, held_hotkey);
     usage.finish_voice_session();
     if let (Some(connected), Some(capabilities), Some(session_id)) =

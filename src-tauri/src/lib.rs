@@ -3574,6 +3574,20 @@ fn get_send_input_snapshot(state: tauri::State<'_, AppState>) -> SendInputSnapsh
 }
 
 #[tauri::command]
+fn get_clipboard_probe_enabled() -> bool {
+    sayall_windows::clipboard_probe::enabled()
+}
+
+#[tauri::command]
+async fn set_clipboard_probe_enabled(enabled: bool, english: bool) -> Result<bool, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        sayall_windows::clipboard_probe::set_enabled(enabled, english)
+    })
+    .await
+    .map_err(|_| "probe_worker_unavailable".to_owned())?
+}
+
+#[tauri::command]
 fn get_voice_hold_hotkey(state: tauri::State<'_, AppState>) -> Option<KeyChord> {
     let hotkey = state.platform.voice_hold_hotkey();
     sayall_windows::gatt_note(format!(
@@ -6090,6 +6104,8 @@ pub fn run() {
         set_voice_hold_hotkey,
         get_voice_input_tool,
         set_voice_input_tool,
+        get_clipboard_probe_enabled,
+        set_clipboard_probe_enabled,
         get_lock_mapping_selection,
         set_lock_mapping_selection,
         get_ime_status,
@@ -6227,6 +6243,8 @@ pub fn run() {
         set_voice_hold_hotkey,
         get_voice_input_tool,
         set_voice_input_tool,
+        get_clipboard_probe_enabled,
+        set_clipboard_probe_enabled,
         get_lock_mapping_selection,
         set_lock_mapping_selection,
         get_ime_status,

@@ -101,6 +101,7 @@ pub fn restore_input_method_after_capture() -> String {
 /// 本次开机的引导类型与「快速启动」开关状态（只读取证，2026-10-20）。
 /// 现场背景：hiberboot 开机后部分蓝牙适配器带旧固件状态，链路反复断开。
 pub mod boot_type;
+pub mod clipboard_probe;
 /// 断连循环检测（纯逻辑）：识别"短时间内连续多次短会话"，只报告不恢复。
 #[cfg_attr(not(windows), allow(dead_code))]
 mod disconnect_loop;
@@ -830,7 +831,9 @@ impl WindowsPlatform {
     /// （见 `graceful_exit` 模块头部的证据）。
     #[cfg(windows)]
     pub fn shutdown_ble_for_exit(&self, timeout: std::time::Duration) -> Result<(), PlatformError> {
-        self.runtime.shutdown_blocking(timeout)
+        let result = self.runtime.shutdown_blocking(timeout);
+        clipboard_probe::shutdown();
+        result
     }
 
     #[cfg(not(windows))]
@@ -918,6 +921,9 @@ impl WindowsPlatform {
     /// 赶不上切换——表现为"换工具后第一按拉不起"。选中即对齐把该窗口期清零；
     /// 按下时的兜底切换保留（覆盖用户手动改走输入法的情况）。
     pub fn set_voice_input_tool(&self, tool: Option<VoiceInputTool>) {
+        if tool != Some(VoiceInputTool::Doubao) {
+            clipboard_probe::shutdown();
+        }
         // 诊断时间基线（2026-10-09）：失败样本全部来自"切完工具、快速切到目标
         // 窗口"，按下时"距选工具多久"由此起算并进 `voice_attempt`。
         ime::note_tool_select();

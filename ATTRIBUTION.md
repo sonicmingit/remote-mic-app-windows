@@ -4,6 +4,14 @@
 
 ## 豆包剪贴板听写（2026-11-05）
 
+- 用户提供 VoiceStick 本地代码作为自动浮窗/粘贴的行为参考：
+  [`sonicmingit/voicestick@479bc330d99f47b47635694adfe83183ff4f7c6f`](https://github.com/sonicmingit/voicestick/tree/479bc330d99f47b47635694adfe83183ff4f7c6f)。
+  核对 `desktop/windows/src/voice_stick_coordinator.cc`、`input_injector_win.cc`、
+  `ime_voice_session.h` 和 `desktop/windows-s3/src-tauri/src/speech_overlay.rs`。
+  仅参考最终结果投送、剪贴板与焦点检查边界，没有复制实现、读取凭据或切换识别服务。
+  用户选择继续豆包输入法，先做原生接字验证；其 API 不激活字幕浮窗不能直接等同于
+  IME 接字窗口。实验现状与未通过边界见 `docs/investigations/2026-11-05-doubao-floating-receiver-probe.md`。
+
 - 本地出包环境参考 [mmozeiko/portable-msvc.py](https://gist.github.com/mmozeiko/7f3162ec2988e81e56d5c4e22cde9977/49b58850aa5e5c1e65f090d4651ee76607883e11)
   （修订 `49b58850aa5e5c1e65f090d4651ee76607883e11`，原始脚本 SHA-256
   `1791cccca594ff083ce8d3e0a139e6156d2c312e24332a909e608010f0230a51`），
