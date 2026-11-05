@@ -1,0 +1,11 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "clipboard-dictation",
+  "description": "本地剪贴板听写页的主题、语言和窗口标题",
+  "windows": ["clipboard-dictation"],
+  "permissions": [
+    "core:event:default",
+    "core:app:allow-set-app-theme",
+    "core:window:allow-set-title"
+  ]
+}

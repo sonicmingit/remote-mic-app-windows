@@ -2,6 +2,23 @@
 
 本仓库是面向 Windows 的 Rust/Tauri 工程。
 
+## 豆包剪贴板听写（2026-11-05）
+
+- 行为参考：[`jacksonlin-infra/remote-voiceime`](https://github.com/jacksonlin-infra/remote-voiceime/tree/c7d29269b2030ef352e71e41d5d3edef8f002a83)
+  提交 `c7d29269b2030ef352e71e41d5d3edef8f002a83` 的 README：在本机接收豆包听写，
+  再借助剪贴板送到不便直接输入的环境。仅参考“本机接收后整段交付”的行为，没有复制代码、
+  引入依赖或采用其远程投送/焦点恢复实现。本补丁让用户主动打开接收窗口并手动粘贴，
+  不自动聚焦第三方应用、不自动投送、不改既有语音键时序。
+- Web 输入生命周期依据 MDN [compositionend](https://developer.mozilla.org/en-US/docs/Web/API/Element/compositionend_event)
+  与 [Clipboard.writeText](https://developer.mozilla.org/en-US/docs/Web/API/Clipboard/writeText)：
+  跳过 composing 中间态，确认后复制自有输入框全文，失败保留原文、按序写入并允许重试。
+  不把固定等待毫秒数视为豆包识别完成判据。
+- 独立窗口依据 [Tauri WebviewWindow](https://v2.tauri.app/reference/javascript/api/namespacewebviewwindow/)
+  与 [Core Permissions](https://v2.tauri.app/reference/acl/core-permissions/)，并核对本机
+  `@tauri-apps/api` 2.11.1 的创建事件、窗口复用与 API 类型。入口/接收窗口 capability 分开；
+  不增加第三方文件、数据库或进程访问。原生构建与真实输入验收边界见
+  `docs/clipboard-dictation-patch.md` 与 `Testing/WindowsClipboardDictation.md`。
+
 ## 鼠标动作扩展
 
 - 鼠标单击/双击参考 AutoHotkey v2 Click 的成对按下/释放行为，不复制其代码或引入依赖；通过 Windows SendInput 单批发送 2/4 个边沿，部分提交时补发释放，不新设双击等待常量。参考： https://www.autohotkey.com/docs/v2/lib/Click.htm 。

@@ -1,5 +1,26 @@
 // English strings for connection. Key = exact Chinese source passed to t().
 export default {
+  "剪贴板听写": "Clipboard Dictation",
+  "打开剪贴板听写": "Open Clipboard Dictation",
+  "无法直接输入时，先在听写窗口说话，文字会自动复制，之后可粘贴到其他软件。":
+    "When direct input fails, dictate in this window. The text is copied automatically so you can paste it into another app.",
+  "听写窗口没有打开，请重试。": "Could not open the dictation window. Try again.",
+  "点下面的输入框，按住遥控器语音键说话，松开后等待文字出现。":
+    "Click the text box below, hold the remote's voice button and speak, then release and wait for the text.",
+  "请使用豆包输入法。文字确认后自动复制整个输入框，可分几次说完，再到目标软件粘贴。":
+    "Use Doubao. All committed text is copied automatically. You can dictate several passages, then paste them into your app.",
+  "听写内容": "Dictation text",
+  "识别出的文字会显示在这里": "Recognized text appears here",
+  "复制全部": "Copy All",
+  "清空内容": "Clear Text",
+  "已复制全部文字，切到目标软件按 Ctrl + V 粘贴。": "All text copied. Switch to your app and press Ctrl + V to paste.",
+  "复制失败，文字已保留。请点“复制全部”重试，或选中文字后按 Ctrl + C。":
+    "Copy failed. Your text is still here. Select Copy All to retry, or select the text and press Ctrl + C.",
+  "正在复制全部文字…": "Copying all text…",
+  "正在输入，确认文字后会自动复制。": "Input in progress. Confirmed text will be copied automatically.",
+  "文字已保留，点“复制全部”后再粘贴。": "Your text is still here. Select Copy All before pasting.",
+  "等待听写。清空内容不会清空剪贴板。": "Ready for dictation. Clearing the text will keep the clipboard content.",
+  "关闭窗口会清除这里的文字，剪贴板内容保留。": "Closing this window clears its text and keeps the clipboard content.",
   // 通用操作失败（原始 IPC/后端错误只进控制台）
   "操作没有完成，请稍后重试。": "The action did not complete. Try again later.",
   "连接出现问题，请稍后重试。": "There is a connection problem. Try again later.",

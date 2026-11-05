@@ -2,6 +2,7 @@
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import BatteryIndicator from "../components/BatteryIndicator.vue";
 import EnhancedCaptureConfirmDialog from "../components/EnhancedCaptureConfirmDialog.vue";
+import ClipboardDictationLauncher from "../components/ClipboardDictationLauncher.vue";
 import { VOICE_HOTKEY_CUSTOM_CAPTURE_ENABLED } from "../lib/feature-flags";
 import { reasonToken, reportFrontendEvent } from "../lib/frontend-diagnostics";
 import { t, tPage } from "../lib/i18n";
@@ -1490,6 +1491,7 @@ onUnmounted(() => {
             >
               {{ captureFailure ?? captureRevokedNote ?? captureInactiveNote }}
             </p>
+            <ClipboardDictationLauncher />
           </div>
 
           <div v-else-if="voiceInputTool === 'wechat'" class="tool-panel">

@@ -11,6 +11,7 @@ export default defineConfig({
       input: {
         main: "index.html",
         commonPhrasesPanel: "common-phrases-panel.html",
+        clipboardDictation: "clipboard-dictation.html",
       },
     },
   },
