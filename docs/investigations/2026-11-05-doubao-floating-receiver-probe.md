@@ -37,6 +37,38 @@
   新剪贴板变化、发送失败不重复、旧代次/重复/取消/空结果与释放前后两种提交顺序。
   新状态测试先运行得到 4 个预期失败，再实现；前端新文案先红再绿。
 
+### 2026-11-06：环境恢复后的复验
+
+- `passed`：公开 API 读回显示剪贴板锁已释放后，原样重跑
+  `cargo test -p sayall-windows --lib clipboard_probe::native::delivery::tests::native_unicode_clipboard_readback_and_hidden_edit_paste --locked -- --ignored --exact`，
+  1 passed，约 0.05 秒。完整 Unicode 文字在真实系统剪贴板及自有隐藏 EDIT 的 WM_PASTE 后
+  逐字一致，并验证写入后的剪贴板变更能使旧序号失效。没有可见窗口、前台切换或全局按键。
+  上面的失败实验保留作环境记录，本项不再 deferred。
+- `passed`：源 `e7430010924d82f2f017050ceacfa95009c97c07` 的 `scripts/ci-preflight.ps1`
+  全部 7 步：前端 586 passed / 10 skipped 与生产构建，Rust 794 passed / 18 ignored，
+  fmt、workspace check、runtime-simulation feature check；仅测试进程统一 TMP=TEMP。
+- `passed`：完整功能源码补丁在基线 `87cf66c4f1058489bbd0cad0f802e2aa893344f8` 的
+  独立 Git 索引中预检、应用、与源文件逐字比对、反向预检；不修改当前工作区，也不含中央
+  TODO/ATTRIBUTION 的追加。未来上游有冲突时必须处理冲突并重新构建，不能覆盖安装目录。
+- `deferred`：完整豆包识别 → 原输入框 Ctrl+V 的可见结果、RC001/RC003 分别的冷态与连续会话、
+  安装升级启动、断连/睡眠恢复。本轮不恢复此前被用户停止的界面自动化，不自动覆盖正在使用的安装版。
+
+### 自动投送本地测试包
+
+- 源 `e7430010924d82f2f017050ceacfa95009c97c07`，版本 1.8.3 / Windows x64。
+  本地交付目录 `artifacts/local-test/2026-11-06-doubao-auto-paste/`，安装器
+  `SayAll-1.8.3-doubao-auto-paste-x64-setup.exe`，13,135,609 字节。
+  SHA-256：`147832ecd89b7aef4b8c85e3141a6fc53542ab0c007b137111b63a504b471dba`。
+- `passed`：本地 NSIS 构建，bundle 载荷与 GUI 子系统检查，23/23 前端资源键嵌入，
+  7z 归档完整性，安装器提取出的主程序源修订号与自动投送行为标记 5/5。
+  提取程序与裸构建文件仅有 Tauri 的 `__TAURI_BUNDLE_TYPE_VAR_UNK` → `NSS` 三个字节差异；
+  按锁定 `tauri-utils 2.9.3` 的 `src/platform.rs` 核实为 NSIS 标记，归一化后其余字节完全一致。
+- 安装器仍为公开源码未签名本地测试包，不含会员、常用语、键位方案私有组件；updater 签名
+  仅用本机测试密钥。未自动安装、覆盖、上传或发布。当前安装版在用，实际替换应先正常退出。
+- 同目录提供 README、机器可读构建记录、校验清单与可重复源码补丁；补丁 SHA-256：
+  `6e25ffe2422b744128dea47ef3995c481fec1b4324b0483b45a23c40d02e2e82`。
+  此补丁对应上述代码提交的快照；更新后的实验/出包记录由本节与交付 README 补充。
+
 ## 用户目标与本轮范围
 
 用户期望：在原目标输入框按住遥控器语音键 → 自动弹出接字浮窗 → 豆包将完整文字写入

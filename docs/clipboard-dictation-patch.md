@@ -33,9 +33,9 @@
 ## 更新后重新应用
 
 这是**源码补丁**，不能直接覆盖已经安装的 EXE。需要在新版源码上应用后重新构建，
-也不能保证任意未来版本无冲突。补丁集中在 `src/clipboard-dictation/` 与独立入口组件，
-只在连接页增加一个 import 和组件标签；其余接线为 Vite 页面入口、英文词条与两份 capability。
-不改 BLE、语音键时序、Rust 核心或回眸捕获。
+也不能保证任意未来版本无冲突。手动入口集中在 `src/clipboard-dictation/`、独立入口组件、
+Vite 页面、英文词条与两份 capability；自动入口另含 Windows 原生浮窗、剪贴板与焦点恢复、
+BLE 会话开始/结束通知及 Tauri IPC。基础语音按键与音频时序不变。
 
 制作基线为 SayAll 1.8.3，`origin/main` 提交 `87cf66c4f1058489bbd0cad0f802e2aa893344f8`。
 可重用补丁不携带中央 `TODO.md` / `ATTRIBUTION.md` 的追加，减少新版合并冲突；
@@ -58,8 +58,9 @@ pnpm build
 脚本拒绝在 main / detached HEAD 或已有 tracked 修改时写入，重复应用是空操作，
 冲突时完整退出，不强制覆盖、不生成部分应用的 `.rej` 文件。
 
-如上游重排连接页，只需把 `ClipboardDictationLauncher` 接回豆包工具面板；
-保留 Vite 的 `clipboard-dictation.html` 入口和 capability。不要把未知冲突当作通过。
+如上游重排连接页，须把含自动开关的 `ClipboardDictationLauncher` 接回豆包工具面板；
+保留 Vite 的 `clipboard-dictation.html` 入口、capability、原生模块与会话/退出接线。
+不要把未知冲突当作通过。
 前端检查后，具备 Rust、MSVC 与仓库安装器依赖的 Windows 主机运行：
 
 ```powershell

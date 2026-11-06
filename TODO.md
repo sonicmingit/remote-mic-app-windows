@@ -6,6 +6,11 @@
   用户已确认浮窗出现且能接字；最新补充自动复制、隐藏浮窗、恢复原焦点和一次 Ctrl+V。
   完整自动投送的真实豆包、RC001/RC003、冷态首用与安装升级验收仍待完成，故不勾选。
   实现、测试与边界见 `docs/investigations/2026-11-05-doubao-floating-receiver-probe.md`。
+  - 2026-11-06 自动投送测试包已生成（源 `e7430010924d82f2f017050ceacfa95009c97c07`）：
+    ci-preflight 7/7，前端 586 passed / 10 skipped，Rust 794 passed / 18 ignored；
+    剪贴板锁解除后原生 Unicode/隐藏 EDIT 粘贴 1 passed；NSIS、23/23 嵌入、提取载荷、归档检查 passed。
+    安装器 SHA-256 `147832ecd89b7aef4b8c85e3141a6fc53542ab0c007b137111b63a504b471dba`。
+    同目录有全功能源码补丁；未自动覆盖安装版或发布。真实豆包到原输入框及型号验收仍 deferred。
   - 后续按用户要求打出接字验证安装包（源 `1f017b9e237e70cc62d5c82128c276bcfdf66b02`）：
     Rust 全量 784 passed / 17 ignored、fmt、默认/仿真编译、构建及载荷校验、23/23 嵌入与
     归档完整性 passed；SHA-256 `367fe03736cc9f7f591a7e04e4867a56f639d5c7d1906316a882848c8284d2c9`。
